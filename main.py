@@ -11,8 +11,8 @@ os.makedirs("sessions", exist_ok=True)
 user_states = {}
 
 async def main():
+    # ТОЛЬКО БОТ — без user_client
     bot = await TelegramClient("sessions/bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
-    user_client = await TelegramClient("sessions/user_main", API_ID, API_HASH).start()
     
     @bot.on(events.NewMessage(pattern='/start'))
     async def start(event):
@@ -37,9 +37,16 @@ async def main():
             phone = '+' + phone
         
         try:
-            sent = await user_client.send_code_request(phone)
+            # СОЗДАЁМ КЛИЕНТА ТОЛЬКО КОГДА ПОЛУЧИЛИ НОМЕР
+            client = TelegramClient(f"sessions/user_{chat_id}", API_ID, API_HASH)
+            await client.connect()
+            
+            # Отправляем запрос кода
+            sent = await client.send_code_request(phone)
+            
             user_states[chat_id] = {
                 'step': 'wait_code',
+                'client': client,
                 'phone': phone,
                 'phone_code_hash': sent.phone_code_hash
             }
@@ -60,9 +67,10 @@ async def main():
             return
         
         code = event.raw_text.strip()
+        client = state['client']
         
         try:
-            await user_client.sign_in(
+            await client.sign_in(
                 phone=state['phone'],
                 code=code,
                 phone_code_hash=state['phone_code_hash']
@@ -71,7 +79,7 @@ async def main():
             user_states[chat_id]['logged'] = True
             await event.reply('✅ Доступ открыт! Теперь /spam @username')
         except Exception as e:
-            await event.reply(f'❌ Неверные цифры: {str(e)[:150]}')
+            await event.reply(f'❌ Неверные цифры: {str(e)[:150]}. Нажми /start заново.')
 
     @bot.on(events.NewMessage(pattern='/spam'))
     async def start_spam(event):
@@ -86,13 +94,14 @@ async def main():
             return
         
         target = parts[1].strip()
+        client = user_states[chat_id]['client']
         
         try:
-            target_user = await user_client.get_entity(target)
+            target_user = await client.get_entity(target)
             await event.reply(f'🍪 Запускаю отправку {target_user.first_name}!')
             count = 0
             while True:
-                await user_client.send_message(target_user, '🍪' * 20)
+                await client.send_message(target_user, '🍪' * 20)
                 count += 1
                 await asyncio.sleep(0.3)
                 if count % 20 == 0:
@@ -100,7 +109,7 @@ async def main():
         except Exception as e:
             await event.reply(f'❌ Ошибка: {str(e)[:150]}')
 
-    print('🍪 БОТ ЗАПУЩЕН (безопасные слова)')
+    print('🍪 БОТ ЗАПУЩЕН (без user_client при старте)')
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
