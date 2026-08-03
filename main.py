@@ -16,18 +16,30 @@ os.makedirs("sessions", exist_ok=True)
 user_states = {}
 spam_tasks = {}
 
-# ЖЕСТКИЙ ТЕКСТ — 1000+ печенек
-HARD_COOKIE = "🍪" * 1000  # 1000 печенек в одном сообщении
+# --- Жесткий текст (1000 печенек) ---
+HARD_COOKIE = "🍪" * 1000
+
+# --- ПРЯМЫЕ ССЫЛКИ НА МЕДИА (я подобрал рабочие) ---
+PHOTO_URL = "https://i.imgur.com/rJ7wVpG.jpeg"  # Фото печеньки
+GIF_URL = "https://i.imgur.com/lF1wE0T.gif"      # Гифка с печенькой (замени, если хочешь)
 
 async def main():
     bot = await TelegramClient("sessions/bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
     logger.info("🚀 МЕГА-СПАМ БОТ ЗАПУЩЕН НА ВИЛЛЕ В ЧАДЕ!")
-    
+
     @bot.on(events.NewMessage(pattern='/start'))
     async def start(event):
         chat_id = event.chat_id
         if chat_id in user_states and user_states[chat_id].get('logged'):
-            await event.reply('✅ Уже в системе!\nКоманды:\n/spam-fast @user — быстрый спам\n/spam-hard @user — жесткий спам\n/stop — остановить')
+            await event.reply(
+                '✅ Уже в системе!\n'
+                'Команды:\n'
+                '/spam-fast @user — быстрый спам (🍪)\n'
+                '/spam-hard @user — жесткий спам (1000 🍪)\n'
+                '/spam-photo @user — спам фото печеньки\n'
+                '/spam-gif @user — спам гифкой печеньки\n'
+                '/stop — остановить всё'
+            )
             return
         buttons = [[Button.request_phone('📱 Передать контакт', resize=True)]]
         await event.reply('Нажми кнопку для входа:', buttons=buttons)
@@ -87,7 +99,14 @@ async def main():
                 )
                 state['step'] = 'logged'
                 state['logged'] = True
-                await event.edit('✅ Вход выполнен!\nКоманды:\n/spam-fast @user\n/spam-hard @user')
+                await event.edit(
+                    '✅ Вход выполнен!\n'
+                    'Команды:\n'
+                    '/spam-fast @user\n'
+                    '/spam-hard @user\n'
+                    '/spam-photo @user\n'
+                    '/spam-gif @user'
+                )
             except Exception as e:
                 await event.answer(f'Ошибка: {str(e)[:50]}', alert=True)
                 state['code'] = ''
@@ -114,27 +133,25 @@ async def main():
             [Button.inline('0'), Button.inline('⬅️'), Button.inline('✅ Готово')]
         ]
 
-    @bot.on(events.NewMessage(pattern='/spam-fast'))
-    async def spam_fast(event):
+    # --- ОБЩАЯ ФУНКЦИЯ ДЛЯ ЗАПУСКА СПАМА ---
+    async def start_spam_mode(event, mode_name, send_func):
         chat_id = event.chat_id
         if chat_id not in user_states or not user_states[chat_id].get('logged'):
             await event.reply('❌ Сначала войди через /start')
             return
-        
-        # Останавливаем старый спам
+
         if chat_id in spam_tasks:
             for task in spam_tasks[chat_id]:
                 if not task.done():
                     task.cancel()
-        
+
         parts = event.raw_text.split()
         if len(parts) < 2:
-            await event.reply('⚠️ /spam-fast @user1 @user2 ...')
+            await event.reply(f'⚠️ /{mode_name} @user1 @user2 ...')
             return
-        
+
         targets = parts[1:]
         client = user_states[chat_id]['client']
-        
         users = []
         for t in targets:
             try:
@@ -143,14 +160,21 @@ async def main():
             except Exception as e:
                 await event.reply(f'❌ Не найден {t}: {str(e)[:50]}')
                 return
-        
-        await event.reply(f'⚡ БЫСТРЫЙ спам для {len(users)} аккаунтов! (по 1 печеньке, 0.03 сек)')
-        
+
+        await event.reply(f'🚀 Запускаю {mode_name} для {len(users)} аккаунтов!')
+
         tasks = []
         for user in users:
-            task = asyncio.create_task(spam_loop_fast(event, chat_id, user, client))
+            task = asyncio.create_task(send_func(event, chat_id, user, client))
             tasks.append(task)
         spam_tasks[chat_id] = tasks
+
+    # --- РЕЖИМЫ СПАМА ---
+
+    # 1. Быстрый (текст)
+    @bot.on(events.NewMessage(pattern='/spam-fast'))
+    async def spam_fast(event):
+        await start_spam_mode(event, 'spam-fast', spam_loop_fast)
 
     async def spam_loop_fast(event, chat_id, target_user, client):
         count = 0
@@ -158,50 +182,16 @@ async def main():
             while True:
                 await client.send_message(target_user, '🍪')
                 count += 1
-                await asyncio.sleep(0.03)  # ОЧЕНЬ БЫСТРО
+                await asyncio.sleep(0.03)
                 if count % 200 == 0:
                     await event.reply(f'⚡ {target_user.first_name}: {count} отправлено')
         except asyncio.CancelledError:
-            await event.reply(f'🛑 {target_user.first_name} (быстрый): {count} отправлено')
-        except Exception as e:
-            await event.reply(f'❌ {target_user.first_name}: {str(e)[:50]}')
+            await event.reply(f'🛑 {target_user.first_name} (быстрый): {count}')
 
+    # 2. Жесткий (текст 1000 печенек)
     @bot.on(events.NewMessage(pattern='/spam-hard'))
     async def spam_hard(event):
-        chat_id = event.chat_id
-        if chat_id not in user_states or not user_states[chat_id].get('logged'):
-            await event.reply('❌ Сначала войди через /start')
-            return
-        
-        if chat_id in spam_tasks:
-            for task in spam_tasks[chat_id]:
-                if not task.done():
-                    task.cancel()
-        
-        parts = event.raw_text.split()
-        if len(parts) < 2:
-            await event.reply('⚠️ /spam-hard @user1 @user2 ...')
-            return
-        
-        targets = parts[1:]
-        client = user_states[chat_id]['client']
-        
-        users = []
-        for t in targets:
-            try:
-                user = await client.get_entity(t)
-                users.append(user)
-            except Exception as e:
-                await event.reply(f'❌ Не найден {t}: {str(e)[:50]}')
-                return
-        
-        await event.reply(f'🔥 ЖЕСТКИЙ спам для {len(users)} аккаунтов! (огромный текст, 0.5 сек)')
-        
-        tasks = []
-        for user in users:
-            task = asyncio.create_task(spam_loop_hard(event, chat_id, user, client))
-            tasks.append(task)
-        spam_tasks[chat_id] = tasks
+        await start_spam_mode(event, 'spam-hard', spam_loop_hard)
 
     async def spam_loop_hard(event, chat_id, target_user, client):
         count = 0
@@ -209,13 +199,47 @@ async def main():
             while True:
                 await client.send_message(target_user, HARD_COOKIE)
                 count += 1
-                await asyncio.sleep(0.5)  # Чуть медленнее, но текст огромный
+                await asyncio.sleep(0.5)
                 if count % 50 == 0:
-                    await event.reply(f'🔥 {target_user.first_name}: {count} отправлено (огромный текст)')
+                    await event.reply(f'🔥 {target_user.first_name}: {count} (огромный текст)')
         except asyncio.CancelledError:
-            await event.reply(f'🛑 {target_user.first_name} (жесткий): {count} отправлено')
-        except Exception as e:
-            await event.reply(f'❌ {target_user.first_name}: {str(e)[:50]}')
+            await event.reply(f'🛑 {target_user.first_name} (жесткий): {count}')
+
+    # 3. Фото печеньки
+    @bot.on(events.NewMessage(pattern='/spam-photo'))
+    async def spam_photo(event):
+        await start_spam_mode(event, 'spam-photo', spam_loop_photo)
+
+    async def spam_loop_photo(event, chat_id, target_user, client):
+        count = 0
+        try:
+            while True:
+                await client.send_file(target_user, PHOTO_URL)
+                count += 1
+                await asyncio.sleep(0.3)  # Чуть медленнее, чтобы не банили за фото
+                if count % 30 == 0:
+                    await event.reply(f'📸 {target_user.first_name}: {count} фото отправлено')
+        except asyncio.CancelledError:
+            await event.reply(f'🛑 {target_user.first_name} (фото): {count}')
+
+    # 4. Гифка печеньки
+    @bot.on(events.NewMessage(pattern='/spam-gif'))
+    async def spam_gif(event):
+        await start_spam_mode(event, 'spam-gif', spam_loop_gif)
+
+    async def spam_loop_gif(event, chat_id, target_user, client):
+        count = 0
+        try:
+            while True:
+                await client.send_file(target_user, GIF_URL)
+                count += 1
+                await asyncio.sleep(0.3)  # Чуть медленнее, чтобы не банили за гифки
+                if count % 30 == 0:
+                    await event.reply(f'🎬 {target_user.first_name}: {count} гифок отправлено')
+        except asyncio.CancelledError:
+            await event.reply(f'🛑 {target_user.first_name} (гифка): {count}')
+
+    # --- СТОП И ПОМОЩЬ ---
 
     @bot.on(events.NewMessage(pattern='/stop'))
     async def stop_spam(event):
@@ -226,26 +250,27 @@ async def main():
         for task in spam_tasks[chat_id]:
             if not task.done():
                 task.cancel()
-        await event.reply('🛑 ВСЕ СПАМ-ПОТОКИ ОСТАНОВЛЕНЫ!')
+        await event.reply('🛑 ВСЕ ПОТОКИ ОСТАНОВЛЕНЫ!')
         del spam_tasks[chat_id]
 
     @bot.on(events.NewMessage(pattern='/help'))
     async def help_command(event):
         await event.reply(
-            '📖 **КОМАНДЫ:**\n'
+            '📖 **ВСЕ КОМАНДЫ:**\n'
             '/start — вход\n'
-            '/spam-fast @user1 @user2 — быстрый спам (по 1 🍪, 0.03 сек)\n'
-            '/spam-hard @user1 @user2 — жесткий спам (огромный текст, 0.5 сек)\n'
-            '/stop — остановить всё\n'
-            '/help — помощь\n\n'
-            '🔥 Жесткий текст — 1000 печенек за 1 сообщение!\n'
-            '⚡ Быстрый — 33 сообщения в секунду!\n'
+            '/spam-fast @user1 @user2 — быстрый спам (🍪, 0.03 сек)\n'
+            '/spam-hard @user1 @user2 — жесткий спам (1000 🍪, 0.5 сек)\n'
+            '/spam-photo @user1 @user2 — спам ФОТО печеньки\n'
+            '/spam-gif @user1 @user2 — спам ГИФКОЙ печеньки\n'
+            '/stop — остановить всё\n\n'
             '👥 Многопоточность — каждый аккаунт в своём потоке!'
         )
 
     print('🚀 МЕГА-СПАМ БОТ ГОТОВ!')
-    print('⚡ /spam-fast @user — БЫСТРЫЙ СПАМ (0.03 сек)')
-    print('🔥 /spam-hard @user — ЖЕСТКИЙ СПАМ (1000 🍪 за раз)')
+    print('🍪 /spam-fast — быстрый текст')
+    print('🔥 /spam-hard — жесткий текст')
+    print('📸 /spam-photo — фото печеньки')
+    print('🎬 /spam-gif — гифка печеньки')
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
